@@ -78,12 +78,70 @@
   .amount-label{
     font-size:1.2rem; margin-bottom:10px; color:#94a3b8;
   }
+  /* New styles for UPI ID management */
+  .upi-selection-container {
+      margin-bottom: 20px;
+      width: 100%;
+  }
+  .upi-selection-container label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+  }
+  .upi-selection-container select {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #4a5568;
+      background: #2d3748;
+      color: white;
+      font-size: 1rem;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+  }
+  .manage-btn {
+      background-color: #3b82f6;
+      color: white;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      width: 100%;
+      margin-top: 10px;
+  }
+  .manage-btn:active {
+      background-color: #2563eb;
+  }
+  .add-upi-form input {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      border: 1px solid #4a5568;
+      background: #2d3748;
+      color: white;
+      font-size: 1rem;
+  }
+  .form-actions {
+      display: flex;
+      gap: 10px;
+  }
+  .form-actions button {
+      flex: 1;
+  }
 </style>
 </head>
 <body>
 
 <div class="screen" id="amount-screen">
   <div class="card">
+    <div class="upi-selection-container">
+        <label for="upi-select">Receive Money to:</label>
+        <select id="upi-select"></select>
+        <button class="manage-btn" id="manage-upi-btn">Manage UPI IDs</button>
+    </div>
     <div class="amount-display" id="display">₹ 0.00</div>
     <div class="keypad">
       <div class="key">1</div>
@@ -120,14 +178,32 @@
   </div>
 </div>
 
+<div class="screen hidden" id="manage-upi-screen">
+    <div class="card">
+        <h2>Manage UPI IDs</h2>
+        <div id="upi-list"></div>
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #4a5568;">
+        <h3>Add New UPI ID</h3>
+        <div class="add-upi-form">
+            <input type="text" id="new-upi-id" placeholder="Enter UPI ID (e.g., user@bank)">
+            <input type="text" id="new-upi-name" placeholder="Enter Name (e.g., John Doe)">
+            <div class="form-actions">
+                <button class="generate-btn" id="save-upi-btn">Add UPI ID</button>
+                <button class="back-btn" id="manage-back-btn">Back</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-const PA = "adityagupta0156-1@oksbi";
-const PN = "Aditya Gupta";
 const CU = "INR";
 
 let amount = "";
 let lastGeneratedURL = "";
 let qrCodeInstance = null;
+let upiList = JSON.parse(localStorage.getItem('upiList')) || [
+    { pa: "adityagupta0156-1@oksbi", pn: "Aditya Gupta" }
+];
 
 const display = document.getElementById("display");
 const keys = document.querySelectorAll(".key");
@@ -141,6 +217,60 @@ const downloadBtn = document.getElementById("downloadBtn");
 const backBtn = document.getElementById("backBtn");
 const qrAmount = document.getElementById("qrAmount");
 const qrDiv = document.getElementById("qrcode");
+const upiSelect = document.getElementById("upi-select");
+const manageUpiBtn = document.getElementById("manage-upi-btn");
+const manageUpiScreen = document.getElementById("manage-upi-screen");
+const upiListDiv = document.getElementById("upi-list");
+const newUpiIdInput = document.getElementById("new-upi-id");
+const newUpiNameInput = document.getElementById("new-upi-name");
+const saveUpiBtn = document.getElementById("save-upi-btn");
+const manageBackBtn = document.getElementById("manage-back-btn");
+
+// Populate the UPI ID dropdown menu
+function populateUpiSelect() {
+    upiSelect.innerHTML = '';
+    upiList.forEach((upi, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = `${upi.pn} (${upi.pa})`;
+        upiSelect.appendChild(option);
+    });
+}
+
+// Render the list of UPI IDs for management
+function renderUpiList() {
+    upiListDiv.innerHTML = '';
+    upiList.forEach((upi, index) => {
+        const item = document.createElement('div');
+        item.style.marginBottom = "10px";
+        item.style.padding = "10px";
+        item.style.backgroundColor = "rgba(255,255,255,0.1)";
+        item.style.borderRadius = "8px";
+        item.innerHTML = `
+            <div><strong>Name:</strong> ${upi.pn}</div>
+            <div><strong>UPI ID:</strong> ${upi.pa}</div>
+            <button style="background: #ef4444; color: white; padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px;" onclick="deleteUpiId(${index})">Delete</button>
+        `;
+        upiListDiv.appendChild(item);
+    });
+}
+
+function saveUpiList() {
+    localStorage.setItem('upiList', JSON.stringify(upiList));
+    populateUpiSelect();
+    renderUpiList();
+}
+
+function deleteUpiId(index) {
+    if (upiList.length <= 1) {
+        alert("You must have at least one UPI ID.");
+        return;
+    }
+    if (confirm("Are you sure you want to delete this UPI ID?")) {
+        upiList.splice(index, 1);
+        saveUpiList();
+    }
+}
 
 keys.forEach(key=>{
   key.addEventListener("click", ()=>{
@@ -168,15 +298,19 @@ generateBtn.addEventListener("click", ()=>{
     return;
   }
   
-  const upiURL = `upi://pay?pa=${encodeURIComponent(PA)}&pn=${encodeURIComponent(PN)}&am=${num.toFixed(2)}&cu=${CU}`;
+  const selectedUpiIndex = upiSelect.value;
+  const selectedUpi = upiList[selectedUpiIndex];
+  if (!selectedUpi) {
+      alert("Please select a valid UPI ID.");
+      return;
+  }
+
+  const upiURL = `upi://pay?pa=${encodeURIComponent(selectedUpi.pa)}&pn=${encodeURIComponent(selectedUpi.pn)}&am=${num.toFixed(2)}&cu=${CU}`;
   lastGeneratedURL = upiURL;
   upiLinkBox.textContent = upiURL;
-  qrAmount.textContent = `Amount: ₹${num.toFixed(2)}`;
+  qrAmount.textContent = `Amount: ₹${num.toFixed(2)} to ${selectedUpi.pn}`;
 
-  // Clear previous QR code
   qrDiv.innerHTML = "";
-
-  // Generate new QR code
   qrCodeInstance = new QRCode(qrDiv, {
     text: upiURL,
     width: 200,
@@ -220,52 +354,45 @@ downloadBtn.addEventListener("click", ()=>{
   if(lastGeneratedURL){
     const qrCanvas = qrDiv.querySelector("canvas");
     if (qrCanvas) {
-      createFormattedQRImage(qrCanvas, parseFloat(amount).toFixed(2));
+      const selectedUpi = upiList[upiSelect.value];
+      createFormattedQRImage(qrCanvas, parseFloat(amount).toFixed(2), selectedUpi.pn, selectedUpi.pa);
     } else {
       alert("QR code is not ready. Please try again.");
     }
   }
 });
 
-function createFormattedQRImage(qrCanvas, amountValue) {
+function createFormattedQRImage(qrCanvas, amountValue, receiverName, upiId) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   
-  // Set canvas dimensions
   canvas.width = 400;
   canvas.height = 600;
   
-  // Fill background
   ctx.fillStyle = "#1a1a1a";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-  // Draw header text
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 24px Arial";
   ctx.textAlign = "center";
   ctx.fillText("UPI PAYMENT", canvas.width / 2, 50);
   
-  // Draw amount
   ctx.font = "bold 32px Arial";
   ctx.fillStyle = "#4CAF50";
   ctx.fillText(`₹ ${amountValue}`, canvas.width / 2, 90);
   
-  // Draw merchant name
   ctx.font = "18px Arial";
   ctx.fillStyle = "#ffffff";
-  ctx.fillText("ADITYA GUPTA", canvas.width / 2, 120);
+  ctx.fillText(receiverName, canvas.width / 2, 120);
   
-  // Draw "ACCEPTED HERE" text
   ctx.font = "bold 20px Arial";
   ctx.fillStyle = "#8B5CF6";
   ctx.fillText("ACCEPTED HERE", canvas.width / 2, 160);
   
-  // Draw "Scan & Pay" instruction
   ctx.font = "16px Arial";
   ctx.fillStyle = "#cccccc";
   ctx.fillText("Scan & Pay Using Any UPI App", canvas.width / 2, 185);
   
-  // Create white background for QR code
   const qrBgSize = 220;
   const qrBgX = (canvas.width - qrBgSize) / 2;
   const qrBgY = 200;
@@ -273,37 +400,31 @@ function createFormattedQRImage(qrCanvas, amountValue) {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize);
   
-  // Draw the QR code from the provided canvas directly
   const qrSize = 180;
   const qrX = (canvas.width - qrSize) / 2;
   const qrY = qrBgY + 20;
   ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
   
-  // Draw UPI ID
   ctx.font = "14px Arial";
   ctx.fillStyle = "#cccccc";
   ctx.textAlign = "center";
-  const upiText = `UPI ID: ${PA}`;
+  const upiText = `UPI ID: ${upiId}`;
   ctx.fillText(upiText, canvas.width / 2, 450);
   
-  // Draw instructions
   ctx.font = "12px Arial";
   ctx.fillStyle = "#999999";
   ctx.fillText("1. Open any UPI app (PhonePe, GPay, Paytm, etc.)", canvas.width / 2, 480);
   ctx.fillText("2. Scan this QR code", canvas.width / 2, 500);
   ctx.fillText("3. Enter your UPI PIN to complete payment", canvas.width / 2, 520);
   
-  // Draw footer
   ctx.font = "10px Arial";
   ctx.fillStyle = "#666666";
   ctx.fillText("Powered by UPI", canvas.width / 2, 570);
   
-  // Add border
   ctx.strokeStyle = "#333333";
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
   
-  // Download the formatted image
   const link = document.createElement("a");
   link.href = canvas.toDataURL("image/png", 1.0);
   link.download = `UPI_Payment_QR_${amountValue}.png`;
@@ -315,10 +436,45 @@ backBtn.addEventListener("click", ()=>{
   amountScreen.classList.remove("hidden");
 });
 
-// Initialize display
+manageUpiBtn.addEventListener("click", () => {
+    amountScreen.classList.add("hidden");
+    manageUpiScreen.classList.remove("hidden");
+});
+
+manageBackBtn.addEventListener("click", () => {
+    manageUpiScreen.classList.add("hidden");
+    amountScreen.classList.remove("hidden");
+});
+
+saveUpiBtn.addEventListener("click", () => {
+    const newUpiId = newUpiIdInput.value.trim();
+    const newUpiName = newUpiNameInput.value.trim();
+
+    if (!newUpiId || !newUpiName) {
+        alert("Please enter both UPI ID and Name.");
+        return;
+    }
+    
+    // Updated UPI ID format validation
+    const upiRegex = /^[a-zA-Z0-9.-_]{2,256}@[a-zA-Z]{2,64}$/;
+    if (!upiRegex.test(newUpiId)) {
+        alert("Please enter a valid UPI ID format (e.g., user@bank).");
+        return;
+    }
+
+    upiList.push({ pa: newUpiId, pn: newUpiName });
+    saveUpiList();
+    newUpiIdInput.value = "";
+    newUpiNameInput.value = "";
+    alert("UPI ID added successfully!");
+});
+
+
+// Initial setup
+populateUpiSelect();
+renderUpiList();
 updateDisplay();
 </script>
 
 </body>
-  </html>
-  
+</html>
