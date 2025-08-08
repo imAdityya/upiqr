@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+<title>UPI Payment QR</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #1e3a8a, #0f172a);
+    color:#fff; display:flex; justify-content:center; align-items:center;
+    min-height:100vh; overflow:hidden;
+  }
+  .screen{
+    width:100%; max-width:420px; padding:20px;
+    display:flex; flex-direction:column; align-items:center;
+    animation:fadeIn 0.4s ease;
+  }
+  @keyframes fadeIn{
+    from{opacity:0; transform:translateY(20px);}
+    to{opacity:1; transform:translateY(0);}
+  }
+  .card{
+    background:rgba(255,255,255,0.08); padding:20px;
+    border-radius:16px; backdrop-filter: blur(8px);
+    width:100%; box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+  }
+  .amount-display{
+    background:rgba(0,0,0,0.3); padding:20px; font-size:2rem;
+    text-align:center; border-radius:12px;
+    margin-bottom:20px; letter-spacing:2px; font-weight:bold;
+  }
+  .keypad{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+    margin-top:10px;
+  }
+  .key{
+    background:rgba(255,255,255,0.12); padding:20px; font-size:1.6rem;
+    border-radius:12px; text-align:center; cursor:pointer;
+    user-select:none; transition:0.2s;
+  }
+  .key:active{ background:rgba(255,255,255,0.25); }
+  .generate-btn{
+    margin-top:15px; background:#16a34a; padding:15px; font-size:1.2rem;
+    border:none; border-radius:12px; color:white; cursor:pointer; width:100%;
+    font-weight:bold;
+  }
+  .generate-btn:active{ background:#15803d; }
+  .hidden{ display:none; }
+  .qr-section{
+    text-align:center; animation:fadeIn 0.5s ease;
+  }
+  #qrFrame{
+    background:white; padding:20px; border-radius:16px;
+    display:inline-block; box-shadow:0 6px 20px rgba(0,0,0,0.4);
+    margin-top:15px;
+  }
+  .link-box{
+    background:rgba(255,255,255,0.12); padding:10px; border-radius:8px;
+    margin-top:15px; font-size:0.85rem; word-break:break-all;
+  }
+  .btn-row{
+    display:flex; gap:10px; margin-top:15px; flex-wrap:wrap; justify-content:center;
+  }
+  .small-btn{
+    padding:10px 14px; border:none; border-radius:8px; cursor:pointer; font-size:0.9rem;
+    font-weight:bold;
+  }
+  .copy{background:#0ea5e9;color:white;}
+  .open{background:#facc15;color:black;}
+  .download{background:#f97316;color:white;}
+  .back-btn{
+    margin-top:20px; background:#64748b; color:white; border:none;
+    padding:10px 16px; border-radius:8px; cursor:pointer;
+  }
+  .amount-label{
+    font-size:1.2rem; margin-bottom:10px; color:#94a3b8;
+  }
+</style>
+</head>
+<body>
+
+<div class="screen" id="amount-screen">
+  <div class="card">
+    <div class="amount-display" id="display">₹ 0.00</div>
+    <div class="keypad">
+      <div class="key">1</div>
+      <div class="key">2</div>
+      <div class="key">3</div>
+      <div class="key">4</div>
+      <div class="key">5</div>
+      <div class="key">6</div>
+      <div class="key">7</div>
+      <div class="key">8</div>
+      <div class="key">9</div>
+      <div class="key">.</div>
+      <div class="key">0</div>
+      <div class="key" id="back">⌫</div>
+    </div>
+    <button class="generate-btn" id="generate">Generate QR</button>
+  </div>
+</div>
+
+<div class="screen hidden" id="qr-screen">
+  <div class="card qr-section">
+    <h2>Scan to Pay</h2>
+    <div class="amount-label" id="qrAmount"></div>
+    <div id="qrFrame">
+      <div id="qrcode"></div>
+    </div>
+    <div class="link-box" id="upiLink"></div>
+    <div class="btn-row">
+      <button class="small-btn copy" id="copyBtn">Copy Link</button>
+      <button class="small-btn open" id="openBtn">Open UPI</button>
+      <button class="small-btn download" id="downloadBtn">Download QR</button>
+    </div>
+    <button class="back-btn" id="backBtn">← Back</button>
+  </div>
+</div>
+
+<script>
+const PA = "adityagupta0156-1@oksbi";
+const PN = "Aditya Gupta";
+const CU = "INR";
+
+let amount = "";
+let lastGeneratedURL = "";
+let qrCodeInstance = null;
+
+const display = document.getElementById("display");
+const keys = document.querySelectorAll(".key");
+const generateBtn = document.getElementById("generate");
+const amountScreen = document.getElementById("amount-screen");
+const qrScreen = document.getElementById("qr-screen");
+const upiLinkBox = document.getElementById("upiLink");
+const copyBtn = document.getElementById("copyBtn");
+const openBtn = document.getElementById("openBtn");
+const downloadBtn = document.getElementById("downloadBtn");
+const backBtn = document.getElementById("backBtn");
+const qrAmount = document.getElementById("qrAmount");
+const qrDiv = document.getElementById("qrcode");
+
+keys.forEach(key=>{
+  key.addEventListener("click", ()=>{
+    const val = key.textContent;
+    if(val === "⌫"){
+      amount = amount.slice(0, -1);
+    } else {
+      if(val === "." && amount.includes(".")) return;
+      if(amount === "0" && val !== ".") amount = "";
+      amount += val;
+    }
+    updateDisplay();
+  });
+});
+
+function updateDisplay(){
+  const num = parseFloat(amount) || 0;
+  display.textContent = "₹ " + num.toFixed(2);
+}
+
+generateBtn.addEventListener("click", ()=>{
+  const num = parseFloat(amount);
+  if(isNaN(num) || num <= 0){
+    alert("Please enter a valid amount");
+    return;
+  }
+  
+  const upiURL = `upi://pay?pa=${encodeURIComponent(PA)}&pn=${encodeURIComponent(PN)}&am=${num.toFixed(2)}&cu=${CU}`;
+  lastGeneratedURL = upiURL;
+  upiLinkBox.textContent = upiURL;
+  qrAmount.textContent = `Amount: ₹${num.toFixed(2)}`;
+
+  // Clear previous QR code
+  qrDiv.innerHTML = "";
+
+  // Generate new QR code
+  qrCodeInstance = new QRCode(qrDiv, {
+    text: upiURL,
+    width: 200,
+    height: 200,
+    colorDark: "#000000",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.M
+  });
+
+  amountScreen.classList.add("hidden");
+  qrScreen.classList.remove("hidden");
+});
+
+copyBtn.addEventListener("click", async ()=>{
+  if(lastGeneratedURL){
+    try {
+      await navigator.clipboard.writeText(lastGeneratedURL);
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => {
+        copyBtn.textContent = "Copy Link";
+      }, 2000);
+    } catch (err) {
+      const textArea = document.createElement("textarea");
+      textArea.value = lastGeneratedURL;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      alert("UPI Link Copied!");
+    }
+  }
+});
+
+openBtn.addEventListener("click", ()=>{
+  if(lastGeneratedURL){
+    window.open(lastGeneratedURL, '_blank');
+  }
+});
+
+downloadBtn.addEventListener("click", ()=>{
+  if(lastGeneratedURL){
+    const qrCanvas = qrDiv.querySelector("canvas");
+    if (qrCanvas) {
+      createFormattedQRImage(qrCanvas, parseFloat(amount).toFixed(2));
+    } else {
+      alert("QR code is not ready. Please try again.");
+    }
+  }
+});
+
+function createFormattedQRImage(qrCanvas, amountValue) {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  
+  // Set canvas dimensions
+  canvas.width = 400;
+  canvas.height = 600;
+  
+  // Fill background
+  ctx.fillStyle = "#1a1a1a";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw header text
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 24px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("UPI PAYMENT", canvas.width / 2, 50);
+  
+  // Draw amount
+  ctx.font = "bold 32px Arial";
+  ctx.fillStyle = "#4CAF50";
+  ctx.fillText(`₹ ${amountValue}`, canvas.width / 2, 90);
+  
+  // Draw merchant name
+  ctx.font = "18px Arial";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("ADITYA GUPTA", canvas.width / 2, 120);
+  
+  // Draw "ACCEPTED HERE" text
+  ctx.font = "bold 20px Arial";
+  ctx.fillStyle = "#8B5CF6";
+  ctx.fillText("ACCEPTED HERE", canvas.width / 2, 160);
+  
+  // Draw "Scan & Pay" instruction
+  ctx.font = "16px Arial";
+  ctx.fillStyle = "#cccccc";
+  ctx.fillText("Scan & Pay Using Any UPI App", canvas.width / 2, 185);
+  
+  // Create white background for QR code
+  const qrBgSize = 220;
+  const qrBgX = (canvas.width - qrBgSize) / 2;
+  const qrBgY = 200;
+  
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize);
+  
+  // Draw the QR code from the provided canvas directly
+  const qrSize = 180;
+  const qrX = (canvas.width - qrSize) / 2;
+  const qrY = qrBgY + 20;
+  ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+  
+  // Draw UPI ID
+  ctx.font = "14px Arial";
+  ctx.fillStyle = "#cccccc";
+  ctx.textAlign = "center";
+  const upiText = `UPI ID: ${PA}`;
+  ctx.fillText(upiText, canvas.width / 2, 450);
+  
+  // Draw instructions
+  ctx.font = "12px Arial";
+  ctx.fillStyle = "#999999";
+  ctx.fillText("1. Open any UPI app (PhonePe, GPay, Paytm, etc.)", canvas.width / 2, 480);
+  ctx.fillText("2. Scan this QR code", canvas.width / 2, 500);
+  ctx.fillText("3. Enter your UPI PIN to complete payment", canvas.width / 2, 520);
+  
+  // Draw footer
+  ctx.font = "10px Arial";
+  ctx.fillStyle = "#666666";
+  ctx.fillText("Powered by UPI", canvas.width / 2, 570);
+  
+  // Add border
+  ctx.strokeStyle = "#333333";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+  
+  // Download the formatted image
+  const link = document.createElement("a");
+  link.href = canvas.toDataURL("image/png", 1.0);
+  link.download = `UPI_Payment_QR_${amountValue}.png`;
+  link.click();
+}
+
+backBtn.addEventListener("click", ()=>{
+  qrScreen.classList.add("hidden");
+  amountScreen.classList.remove("hidden");
+});
+
+// Initialize display
+updateDisplay();
+</script>
+
+</body>
+  </html>
+  
