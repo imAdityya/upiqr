@@ -16,11 +16,16 @@
   .screen{
     width:100%; max-width:420px; padding:20px;
     display:flex; flex-direction:column; align-items:center;
-    animation:fadeIn 0.4s ease;
+    transition: opacity 0.4s ease, transform 0.4s ease;
   }
-  @keyframes fadeIn{
-    from{opacity:0; transform:translateY(20px);}
-    to{opacity:1; transform:translateY(0);}
+  /* Animation for transitioning between screens */
+  .screen.transition-exit {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  .screen.transition-enter {
+    opacity: 1;
+    transform: translateY(0);
   }
   .card{
     background:rgba(255,255,255,0.08); padding:20px;
@@ -50,7 +55,7 @@
   .generate-btn:active{ background:#15803d; }
   .hidden{ display:none; }
   .qr-section{
-    text-align:center; animation:fadeIn 0.5s ease;
+    text-align:center;
   }
   #qrFrame{
     background:white; padding:20px; border-radius:16px;
@@ -131,11 +136,28 @@
   .form-actions button {
       flex: 1;
   }
+  #add-upi-screen .card {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
 </style>
 </head>
 <body>
 
-<div class="screen" id="amount-screen">
+<div class="screen transition-exit" id="add-upi-screen">
+    <div class="card">
+        <h2>Add UPI Details</h2>
+        <p style="text-align: center;">Please add at least one UPI ID to get started.</p>
+        <div class="add-upi-form">
+            <input type="text" id="initial-upi-id" placeholder="Enter UPI ID (e.g., user@bank)">
+            <input type="text" id="initial-upi-name" placeholder="Enter Name (e.g., John Doe)">
+            <button class="generate-btn" id="initial-save-btn">Save and Continue</button>
+        </div>
+    </div>
+</div>
+
+<div class="screen transition-exit hidden" id="main-app-screen">
   <div class="card">
     <div class="upi-selection-container">
         <label for="upi-select">Receive Money to:</label>
@@ -161,7 +183,7 @@
   </div>
 </div>
 
-<div class="screen hidden" id="qr-screen">
+<div class="screen transition-exit hidden" id="qr-screen">
   <div class="card qr-section">
     <h2>Scan to Pay</h2>
     <div class="amount-label" id="qrAmount"></div>
@@ -178,7 +200,7 @@
   </div>
 </div>
 
-<div class="screen hidden" id="manage-upi-screen">
+<div class="screen transition-exit hidden" id="manage-upi-screen">
     <div class="card">
         <h2>Manage UPI IDs</h2>
         <div id="upi-list"></div>
@@ -201,14 +223,17 @@ const CU = "INR";
 let amount = "";
 let lastGeneratedURL = "";
 let qrCodeInstance = null;
-let upiList = JSON.parse(localStorage.getItem('upiList')) || [
-    { pa: "adityagupta0156-1@oksbi", pn: "Aditya Gupta" }
-];
+let upiList = [];
 
+// DOM Elements
 const display = document.getElementById("display");
 const keys = document.querySelectorAll(".key");
 const generateBtn = document.getElementById("generate");
-const amountScreen = document.getElementById("amount-screen");
+const initialUpiIdInput = document.getElementById("initial-upi-id");
+const initialUpiNameInput = document.getElementById("initial-upi-name");
+const initialSaveBtn = document.getElementById("initial-save-btn");
+const addUpiScreen = document.getElementById("add-upi-screen");
+const mainAppScreen = document.getElementById("main-app-screen");
 const qrScreen = document.getElementById("qr-screen");
 const upiLinkBox = document.getElementById("upiLink");
 const copyBtn = document.getElementById("copyBtn");
@@ -226,7 +251,35 @@ const newUpiNameInput = document.getElementById("new-upi-name");
 const saveUpiBtn = document.getElementById("save-upi-btn");
 const manageBackBtn = document.getElementById("manage-back-btn");
 
-// Populate the UPI ID dropdown menu
+// --- Cookie Management Functions ---
+function getUpiCookie() {
+    const name = "upi_ids=";
+    const decodedCookie = decodeURIComponent(document.cookie);
+    const ca = decodedCookie.split(';');
+    for(let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) === ' ') {
+            c = c.substring(1);
+        }
+        if (c.indexOf(name) === 0) {
+            try {
+                return JSON.parse(c.substring(name.length, c.length));
+            } catch (e) {
+                return [];
+            }
+        }
+    }
+    return [];
+}
+
+function setUpiCookie(upiData) {
+    const d = new Date();
+    d.setTime(d.getTime() + (365 * 24 * 60 * 60 * 1000)); // 1 year expiry
+    const expires = "expires=" + d.toUTCString();
+    document.cookie = "upi_ids=" + JSON.stringify(upiData) + ";" + expires + ";path=/";
+}
+
+// --- UPI ID Management Logic ---
 function populateUpiSelect() {
     upiSelect.innerHTML = '';
     upiList.forEach((upi, index) => {
@@ -237,7 +290,6 @@ function populateUpiSelect() {
     });
 }
 
-// Render the list of UPI IDs for management
 function renderUpiList() {
     upiListDiv.innerHTML = '';
     upiList.forEach((upi, index) => {
@@ -256,7 +308,7 @@ function renderUpiList() {
 }
 
 function saveUpiList() {
-    localStorage.setItem('upiList', JSON.stringify(upiList));
+    setUpiCookie(upiList);
     populateUpiSelect();
     renderUpiList();
 }
@@ -272,6 +324,29 @@ function deleteUpiId(index) {
     }
 }
 
+// --- UI Logic ---
+function updateDisplay(){
+  const num = parseFloat(amount) || 0;
+  display.textContent = "₹ " + num.toFixed(2);
+}
+
+function showScreen(screenToShow) {
+    const screens = [addUpiScreen, mainAppScreen, qrScreen, manageUpiScreen];
+    
+    screens.forEach(screen => {
+        if (screen === screenToShow) {
+            screen.classList.remove('hidden');
+            screen.classList.remove('transition-exit');
+            screen.classList.add('transition-enter');
+        } else {
+            screen.classList.add('hidden');
+            screen.classList.remove('transition-enter');
+            screen.classList.add('transition-exit');
+        }
+    });
+}
+
+// --- Event Listeners ---
 keys.forEach(key=>{
   key.addEventListener("click", ()=>{
     const val = key.textContent;
@@ -285,11 +360,6 @@ keys.forEach(key=>{
     updateDisplay();
   });
 });
-
-function updateDisplay(){
-  const num = parseFloat(amount) || 0;
-  display.textContent = "₹ " + num.toFixed(2);
-}
 
 generateBtn.addEventListener("click", ()=>{
   const num = parseFloat(amount);
@@ -320,8 +390,7 @@ generateBtn.addEventListener("click", ()=>{
     correctLevel: QRCode.CorrectLevel.M
   });
 
-  amountScreen.classList.add("hidden");
-  qrScreen.classList.remove("hidden");
+  showScreen(qrScreen);
 });
 
 copyBtn.addEventListener("click", async ()=>{
@@ -365,66 +434,51 @@ downloadBtn.addEventListener("click", ()=>{
 function createFormattedQRImage(qrCanvas, amountValue, receiverName, upiId) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  
   canvas.width = 400;
   canvas.height = 600;
-  
   ctx.fillStyle = "#1a1a1a";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 24px Arial";
   ctx.textAlign = "center";
   ctx.fillText("UPI PAYMENT", canvas.width / 2, 50);
-  
   ctx.font = "bold 32px Arial";
   ctx.fillStyle = "#4CAF50";
   ctx.fillText(`₹ ${amountValue}`, canvas.width / 2, 90);
-  
   ctx.font = "18px Arial";
   ctx.fillStyle = "#ffffff";
   ctx.fillText(receiverName, canvas.width / 2, 120);
-  
   ctx.font = "bold 20px Arial";
   ctx.fillStyle = "#8B5CF6";
   ctx.fillText("ACCEPTED HERE", canvas.width / 2, 160);
-  
   ctx.font = "16px Arial";
   ctx.fillStyle = "#cccccc";
   ctx.fillText("Scan & Pay Using Any UPI App", canvas.width / 2, 185);
-  
   const qrBgSize = 220;
   const qrBgX = (canvas.width - qrBgSize) / 2;
   const qrBgY = 200;
-  
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(qrBgX, qrBgY, qrBgSize, qrBgSize);
-  
   const qrSize = 180;
   const qrX = (canvas.width - qrSize) / 2;
   const qrY = qrBgY + 20;
   ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
-  
   ctx.font = "14px Arial";
   ctx.fillStyle = "#cccccc";
   ctx.textAlign = "center";
   const upiText = `UPI ID: ${upiId}`;
   ctx.fillText(upiText, canvas.width / 2, 450);
-  
   ctx.font = "12px Arial";
   ctx.fillStyle = "#999999";
   ctx.fillText("1. Open any UPI app (PhonePe, GPay, Paytm, etc.)", canvas.width / 2, 480);
   ctx.fillText("2. Scan this QR code", canvas.width / 2, 500);
   ctx.fillText("3. Enter your UPI PIN to complete payment", canvas.width / 2, 520);
-  
   ctx.font = "10px Arial";
   ctx.fillStyle = "#666666";
   ctx.fillText("Powered by UPI", canvas.width / 2, 570);
-  
   ctx.strokeStyle = "#333333";
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
-  
   const link = document.createElement("a");
   link.href = canvas.toDataURL("image/png", 1.0);
   link.download = `UPI_Payment_QR_${amountValue}.png`;
@@ -432,48 +486,68 @@ function createFormattedQRImage(qrCanvas, amountValue, receiverName, upiId) {
 }
 
 backBtn.addEventListener("click", ()=>{
-  qrScreen.classList.add("hidden");
-  amountScreen.classList.remove("hidden");
+  showScreen(mainAppScreen);
 });
 
 manageUpiBtn.addEventListener("click", () => {
-    amountScreen.classList.add("hidden");
-    manageUpiScreen.classList.remove("hidden");
+    showScreen(manageUpiScreen);
 });
 
 manageBackBtn.addEventListener("click", () => {
-    manageUpiScreen.classList.add("hidden");
-    amountScreen.classList.remove("hidden");
+    showScreen(mainAppScreen);
 });
 
 saveUpiBtn.addEventListener("click", () => {
     const newUpiId = newUpiIdInput.value.trim();
     const newUpiName = newUpiNameInput.value.trim();
-
+    const upiRegex = /^[a-zA-Z0-9.-_]{2,256}@[a-zA-Z]{2,64}$/;
     if (!newUpiId || !newUpiName) {
         alert("Please enter both UPI ID and Name.");
         return;
     }
-    
-    // Updated UPI ID format validation
-    const upiRegex = /^[a-zA-Z0-9.-_]{2,256}@[a-zA-Z]{2,64}$/;
     if (!upiRegex.test(newUpiId)) {
         alert("Please enter a valid UPI ID format (e.g., user@bank).");
         return;
     }
-
     upiList.push({ pa: newUpiId, pn: newUpiName });
     saveUpiList();
     newUpiIdInput.value = "";
     newUpiNameInput.value = "";
     alert("UPI ID added successfully!");
+    showScreen(mainAppScreen);
 });
 
+initialSaveBtn.addEventListener("click", () => {
+    const newUpiId = initialUpiIdInput.value.trim();
+    const newUpiName = initialUpiNameInput.value.trim();
+    const upiRegex = /^[a-zA-Z0-9.-_]{2,256}@[a-zA-Z]{2,64}$/;
+    if (!newUpiId || !newUpiName) {
+        alert("Please enter both UPI ID and Name.");
+        return;
+    }
+    if (!upiRegex.test(newUpiId)) {
+        alert("Please enter a valid UPI ID format (e.g., user@bank).");
+        return;
+    }
+    upiList.push({ pa: newUpiId, pn: newUpiName });
+    saveUpiList();
+    showScreen(mainAppScreen);
+});
 
-// Initial setup
-populateUpiSelect();
-renderUpiList();
-updateDisplay();
+// --- Initial App Load Logic ---
+document.addEventListener('DOMContentLoaded', () => {
+    upiList = getUpiCookie();
+    
+    // Set up the correct initial screen
+    if (upiList.length === 0) {
+        showScreen(addUpiScreen);
+    } else {
+        populateUpiSelect();
+        renderUpiList();
+        updateDisplay();
+        showScreen(mainAppScreen);
+    }
+});
 </script>
 
 </body>
